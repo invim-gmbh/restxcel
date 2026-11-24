@@ -1,0 +1,85 @@
+name: Build and release
+
+# Every push/merge to master is a release: version 1.1.0.<days since 2010-01-01>, a git tag and the Docker image
+# restxcel:<version> in the registry. A second release on the same day has the same version and replaces the
+# first one (tag and image are overwritten).
+# Pull requests against master are only built - nothing is tagged or pushed.
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+# Releases run one after another so that tags of two quick merges don't overtake each other.
+# Pull request builds have their own group and are cancelled on new commits.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('build-pr-{0}', github.event.pull_request.number) || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: write
+
+env:
+  IS_RELEASE: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
+  IMAGE_NAME: restxcel
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Calculate build version
+      id: version
+      run: |
+        start_date="2010-01-01"
+        today=$(date -u +%s)
+        start=$(date -u -d "$start_date" +%s)
+        days=$(( (today - start) / 86400 ))
+        echo "days=$days" >> $GITHUB_OUTPUT
+        echo "version=1.1.0.$days" >> $GITHUB_OUTPUT
+        echo "Version: 1.1.0.$days"
+
+    # Built under a local name; the registry name is only applied when pushing (registry secrets are not
+    # available for pull requests from forks).
+    - name: Build the Docker image
+      run: >
+        docker build . --file ./Dockerfile
+        --tag ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+        --build-arg BUILD_VERSION=${{ steps.version.outputs.version }}
+
+    - name: Log in to the registry
+      if: env.IS_RELEASE == 'true'
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+      with:
+        registry: ${{ secrets.REGISTRY_HOST }}
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+
+    - name: Push Docker image
+      if: env.IS_RELEASE == 'true'
+      env:
+        REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+      run: |
+        TARGET="$REGISTRY_HOST/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
+        docker tag "${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}" "$TARGET"
+        docker push "$TARGET"
+
+    # Tag only after a successful push: a tag always points to a state whose image exists.
+    - name: Tag the release
+      if: env.IS_RELEASE == 'true'
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        git tag -f "v$VERSION"
+        git push -f origin "v$VERSION"
+
+    - name: Summary
+      if: env.IS_RELEASE == 'true'
+      run: |
+        echo "### Restxcel ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "Image: \`${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
