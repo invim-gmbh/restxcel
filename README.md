@@ -4,7 +4,7 @@
 Simple ASP.NET Web API using EPPlusFree NuGet package to expose a restful interface for creating excel documents.
 
 ## Dependencies:
-- .NET 5.0
+- .NET 10
 - EPPlusFree (GNU Lesser General Public License)
 - Newtonsoft.Json (MIT License)
 - Swashbuckle.AspNetCore (MIT License)
@@ -17,7 +17,7 @@ https://nvm-restxcel.azurewebsites.net/swagger
 ### Use your own installation
 Download a release from the [release](https://github.com/nvm-uli/restxcel/releases) page.
   or
-Download the source code and run with (.NET 5.0 SDK required)
+Download the source code and run with (.NET 10 SDK required)
 `dotnet run`
 
 Open swagger endpoint on `[yourscheme]://[yourendpoint]:[yourport]/swagger`
